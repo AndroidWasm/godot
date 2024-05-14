@@ -46,6 +46,11 @@ def get_doc_path():
 def get_env_android_sdk_root():
     return os.environ.get("ANDROID_HOME", os.environ.get("ANDROID_SDK_ROOT", ""))
 
+def get_env_andorid_toolchain():
+    return os.environ.get("ANDROID_CLANG_TOOLCHAIN", "");
+
+def get_env_wasm_ndk():
+    return os.environ.get("ANDROID_WASM_NDK", "");
 
 def get_min_sdk_version(platform):
     return int(platform.split("-")[1])
@@ -99,7 +104,7 @@ def install_ndk_if_needed(env: "SConsEnvironment"):
 
 def configure(env: "SConsEnvironment"):
     # Validate arch.
-    supported_arches = ["x86_32", "x86_64", "arm32", "arm64"]
+    supported_arches = ["x86_32", "x86_64", "arm32", "arm64", "wasm64"]
     if env["arch"] not in supported_arches:
         print(
             'Unsupported CPU architecture "%s" for Android. Supported architectures are: %s.'
@@ -127,6 +132,8 @@ def configure(env: "SConsEnvironment"):
         target_triple = "i686-linux-android"
     elif env["arch"] == "x86_64":
         target_triple = "x86_64-linux-android"
+    elif env["arch"] == "wasm64":
+        target_triple = "wasm64-unknown-nativeandroid"
 
     target_option = ["-target", target_triple + str(get_min_sdk_version(env["ndk_platform"]))]
     env.Append(ASFLAGS=[target_option, "-c"])
@@ -163,8 +170,11 @@ def configure(env: "SConsEnvironment"):
         else:
             host_subpath = "windows"
 
-    toolchain_path = ndk_root + "/toolchains/llvm/prebuilt/" + host_subpath
-    compiler_path = toolchain_path + "/bin"
+    if env["arch"] == "wasm64":
+      compiler_path = get_env_andorid_toolchain()
+    else:
+      toolchain_path = ndk_root + "/toolchains/llvm/prebuilt/" + host_subpath
+      compiler_path = toolchain_path + "/bin"
 
     env["CC"] = compiler_path + "/clang"
     env["CXX"] = compiler_path + "/clang++"
@@ -172,9 +182,13 @@ def configure(env: "SConsEnvironment"):
     env["RANLIB"] = compiler_path + "/llvm-ranlib"
     env["AS"] = compiler_path + "/clang"
 
+
+    if env["arch"] != "wasm64":
+        env.Append(CCFLAGS=["-fpic"])
+
     env.Append(
         CCFLAGS=(
-            "-fpic -ffunction-sections -funwind-tables -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing".split()
+            "-ffunction-sections -funwind-tables -fstack-protector-strong -fvisibility=hidden -fno-strict-aliasing".split()
         )
     )
 
@@ -191,6 +205,20 @@ def configure(env: "SConsEnvironment"):
     elif env["arch"] == "arm64":
         env.Append(CCFLAGS=["-mfix-cortex-a53-835769"])
         env.Append(CPPDEFINES=["__ARM_ARCH_8A__"])
+    elif env["arch"] == "wasm64":
+        env.Append(
+            CCFLAGS=(
+                "-fvisibility=default -mno-bulk-memory".split()
+            )
+        )
+        # Manually set include path for wasm64
+        wasm_platform_specific_include_path = get_env_wasm_ndk() + "/include/wasm64"
+        ndk_sysroot = ndk_root + "/toolchains/llvm/prebuilt/" + host_subpath + "/sysroot"
+        env.Append(CCFLAGS=["-I" + wasm_platform_specific_include_path])
+        env.Append(CCFLAGS=["-I" + ndk_sysroot + "/usr/include/c++/v1"])
+        env.Append(CCFLAGS=["-I" + ndk_sysroot + "/usr/include"])
+
+        env.Append(CPPDEFINES=["__wasi__", "__ANDROID__"])
 
     # Link flags
 
