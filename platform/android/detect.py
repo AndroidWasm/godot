@@ -218,7 +218,8 @@ def configure(env: "SConsEnvironment"):
         env.Append(CCFLAGS=["-I" + ndk_sysroot + "/usr/include/c++/v1"])
         env.Append(CCFLAGS=["-I" + ndk_sysroot + "/usr/include"])
 
-        env.Append(CPPDEFINES=["__wasi__", "__ANDROID__"])
+        # TODO: investigate why we don't get __unix__ "for free"
+        env.Append(CPPDEFINES=["__wasi__", "__ANDROID__", "__unix__"])
 
     # Link flags
 
